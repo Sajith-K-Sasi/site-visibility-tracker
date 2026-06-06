@@ -1,0 +1,23 @@
+{
+  "name": "site-visibility-tracker",
+  "version": "0.1.0",
+  "description": "Thin installer that scaffolds the /svt:* Claude Code workflow (commands + collector agents + data contracts) into a project's .claude/. The product itself is pure Claude Code — this package only copies files.",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "bin": {
+    "site-visibility-tracker": "bin/install.mjs",
+    "svt-install": "bin/install.mjs"
+  },
+  "files": [
+    ".claude/commands/svt",
+    ".claude/agents/svt-google.md",
+    ".claude/agents/svt-ai-engine.md",
+    ".claude/svt/contracts",
+    "bin/install.mjs",
+    "INSTALL.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

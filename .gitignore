@@ -1,0 +1,52 @@
+# === site-visibility-tracker ===
+
+# Logged-in browser session profiles — contain platform cookies/credentials.
+# Machine-local by design; re-create on each machine via /svt-login. NEVER commit.
+profiles/
+
+# Run artifacts: structured results, evidence screenshots, quarantine logs,
+# generated XLSX/PDF reports. Client-specific and large — keep out of the repo.
+runs/
+
+# Client input files (may contain client-specific site/keyword lists).
+# Comment this out if you intend to version a shared sample input.
+inputs/
+
+# Node / Playwright
+node_modules/
+.playwright/
+playwright-report/
+test-results/
+*.log
+
+# playwright-cli workspace — transient snapshot YAML, console logs, session data.
+# Re-created on every run; never commit.
+.playwright-cli/
+
+# Installed playwright-cli Claude Code skill — re-installed idempotently by
+# /svt:setup (playwright-cli install --skills) and version-matched to the CLI.
+# Not vendored, to avoid repo bloat + drift.
+.claude/skills/
+
+# Local-only Claude Code settings (per-machine; not for sharing)
+.claude/settings.local.json
+.claude/settings.json
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# PAUL build-process state (internal planning/decisions; per-maintainer, not the public product)
+.paul/
+
+# Internal: SEED ideation record + PAUL build framework (build-time only; not part of the shipped product)
+docs/PLANNING.md
+.claude/paul-framework/
+
+# Internal build-tooling commands (not part of the shipped svt product; build-time only)
+.claude/commands/paul/
+.claude/commands/skillsmith/
+.claude/skillsmith-specs/
