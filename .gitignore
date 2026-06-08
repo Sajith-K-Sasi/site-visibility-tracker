@@ -46,8 +46,9 @@ Thumbs.db
 docs/PLANNING.md
 .claude/paul-framework/
 
-# Personal blog draft (write-up about the project; not part of the shipped product)
+# Personal blog draft + social teasers (write-up about the project; not part of the shipped product)
 docs/medium-post.md
+docs/social.md
 
 # Internal build-tooling commands (not part of the shipped svt product; build-time only)
 .claude/commands/paul/
