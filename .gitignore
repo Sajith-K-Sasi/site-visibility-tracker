@@ -46,6 +46,9 @@ Thumbs.db
 docs/PLANNING.md
 .claude/paul-framework/
 
+# Personal blog draft (write-up about the project; not part of the shipped product)
+docs/medium-post.md
+
 # Internal build-tooling commands (not part of the shipped svt product; build-time only)
 .claude/commands/paul/
 .claude/commands/skillsmith/
