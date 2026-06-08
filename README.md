@@ -86,6 +86,74 @@ A coverage gap is **never** rendered as a competitive negative. "We looked and t
 
 ---
 
+## Architecture
+
+Where **How it works** above describes *behavior*, this section describes *structure and the decisions behind it* — the part worth reading if you want to build something like it. The whole system is **18 files of Markdown + one installer**; there is no application code at the core. The Claude Code agent is the runtime, and the files are its instructions.
+
+### The layers
+
+```
+   inputs/<file>.csv  ─┐
+   or pasted block    ─┴─►  ┌──────────────────────────────────────────┐
+                            │  ORCHESTRATOR   /svt:run · /svt:collect   │
+                            │  parse → normalize → snapshot → dispatch  │
+                            └──────────────────┬───────────────────────┘
+                                  one check = (site_url, keyword, platform)
+                          ┌────────────────────┴────────────────────┐
+                          ▼                                          ▼
+                ┌───────────────────┐                   ┌───────────────────────┐
+                │  svt-google       │     …per lane…     │  svt-ai-engine        │
+                │  COLLECTOR subagt │                    │  COLLECTOR subagt ×5  │
+                └─────────┬─────────┘                    └───────────┬───────────┘
+                          │            drives the browser            │
+                          ▼                                          ▼
+                ┌──────────────────────────────────────────────────────────────┐
+                │  @playwright/cli skill — 1 persistent real-Chrome profile per  │
+                │  platform  (profiles/<platform>/, logged-in, machine-local)    │
+                └──────────────────────────────────────────────────────────────┘
+                          │   agent reads the page snapshot, judges in-context,
+                          ▼   captures one screenshot per check
+                runs/<id>/results.ndjson   (append-only)  +  evidence/*.png
+                          │
+                          ▼
+                ┌──────────────────────────────────────────────┐
+                │  /svt:report → Anthropic document-skills       │
+                │  scorecard.xlsx (openpyxl) · report.pdf (PDF)  │
+                └──────────────────────────────────────────────┘
+```
+
+Four roles, each a different kind of file — and the agent is the only thing that "runs":
+
+- **Orchestrator** (`/svt:*` command files) — owns input parsing, the run folder, dispatch, concurrency, and resilience. Holds *no* page logic.
+- **Collector subagents** (`svt-google`, `svt-ai-engine`) — run in isolated context so a 4,000-check batch never pollutes the orchestrator's window. One does positional Google scanning; one body, parameterized by a recipe row, drives all five AI chats.
+- **Browser** — Microsoft's `@playwright/cli` skill, installed (not bundled) by `/svt:setup`. Stateful named sessions over one persistent real-Chrome profile per platform, so logins survive across runs.
+- **Reporting** — Anthropic's first-party `document-skills` render the two deliverables. No second LLM, no gstack.
+
+### The seam is a contract, not an API
+
+The five files in `.claude/svt/contracts/` are the load-bearing design choice. Because there's no code to import, the orchestrator and the collectors can't share types — they share **prose contracts** the agent honors: the input shape, the `runs/<id>/` layout, the result record shapes, the AI-engine recipe table, and the report shape. The collector and the report renderer never call each other; they meet at `results.ndjson`, whose shape is pinned by `result-shapes.md`. Swapping a sixth AI engine in is a new **recipe row**, not a new module.
+
+### Concurrency is bound by bot-detection, not CPU
+
+The binding constraint is one persistent logged-in profile per platform, so the model is **across-platform parallel, serial within a platform**, with per-check jitter between a lane's successive queries. The knobs (jitter, bounded retry/backoff, a per-lane circuit-breaker, an optional global wall-clock cap) all exist to *stay human-looking*, not to push throughput. This is the inversion that surprises people: more cores buy you nothing; looking like a person buys you everything.
+
+### Honesty is a state machine, not a boolean
+
+Every check resolves to one of six explicit statuses, and the resume rule is defined in terms of which are **terminal**:
+
+| status | terminal? | on resume |
+|---|---|---|
+| `ok` · `not_applicable` · `skipped-no-session` · `quarantined` · `error` | ✅ | skip — already a recorded outcome |
+| `needs-human` | ❌ | re-attempt after the human clears the challenge |
+
+The append-only NDJSON write path is what makes a run crash-safe and resumable: a batch that dies at check 3,000 of 4,500 leaves 3,000 valid lines and a clean tail — no half-written array to repair, and a re-invocation re-collects only the missing and the `needs-human` checks. The whole point of the enum is that **"we looked and found nothing" is never collapsed into "we couldn't look."** That distinction is the product's integrity, encoded as state.
+
+### The design bet
+
+This started as a conventional Node implementation (collectors, parsers, a schema layer) and was deliberately **rebuilt as a pure Claude Code workflow** — the code deleted on purpose. The bet: for a job that is *read a page, understand it in context, judge a brand's presence by meaning*, brittle CSS selectors and a parsing pipeline are the liability, and the agent reading a snapshot is the feature. What's left is instructions, contracts, and evidence — and the agent supplies the judgment that code used to fake.
+
+---
+
 ## Reporting
 
 `/svt:report` aggregates a run in-context and renders two views of one model, gstack-free, via Anthropic's first-party **document-skills**:
