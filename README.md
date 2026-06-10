@@ -2,7 +2,7 @@
 
 > A pure **Claude Code workflow** that tracks organic (Google) and AI-search (ChatGPT, Gemini, Claude, Grok, Perplexity) visibility for any list of sites × keywords — turning hours of manual checking into one evidence-backed run and a client-ready report.
 
-**What it is:** slash commands plus the Claude Code agent itself as the brain. No bundled software, no second LLM, no backend. The agent drives a logged-in browser through Microsoft's `@playwright/cli` (and its Claude Code skill), reads each result, judges visibility in-context, captures screenshot evidence, and emits an XLSX scorecard + a PDF report.
+**What it is:** slash commands plus the Claude Code agent itself as the brain. No bundled software, no second LLM, no backend. The agent drives a logged-in browser through Microsoft's `@playwright/cli` (and its Claude Code skill), reads each result, judges visibility in-context, captures screenshot evidence, and emits a client-ready **AI Visibility Tracker** matrix (XLSX) — with an optional detailed scorecard + PDF report.
 
 **Status:** v0.1 MVP — collection, resilience, and reporting are shipped and installable; final live validation + scale-up is in progress.
 
@@ -10,7 +10,7 @@
 
 ## Why
 
-A digital-marketing team manually tracks organic + AI visibility for ~10 priority keywords across dozens of client sites — roughly **75 hours per cycle**. This workflow automates the collection, keeps every check honest and evidence-backed, and produces the deliverables. Point it at a list of sites + keywords; it drives real logged-in browser sessions across all six platforms, captures structured results + screenshots, asks a human only when a CAPTCHA truly needs one, and writes the spreadsheet + PDF.
+A digital-marketing team manually tracks organic + AI visibility for ~10 priority keywords across dozens of client sites — roughly **75 hours per cycle**. This workflow automates the collection, keeps every check honest and evidence-backed, and produces the deliverables. Point it at a list of sites + keywords; it drives real logged-in browser sessions across all six platforms, captures structured results + screenshots, asks a human only when a CAPTCHA truly needs one, and writes the AI Visibility Tracker matrix (plus an optional scorecard + PDF).
 
 Nothing about any client is hardcoded. **The input file is the only client-specific artifact.**
 
@@ -45,7 +45,7 @@ Then, inside Claude Code:
 | `/svt:login [platform] \| --status` | Open a headed real-Chrome session and log into each AI platform once; the login persists in a per-platform profile. `--status` reports what's logged in. Google organic needs no login. |
 | `/svt:collect <pasted block>` | Single, ad-hoc: a URL line then keyword lines → collect that site across the selected platforms. |
 | `/svt:run inputs/<file>.csv` | Batch: walk a reusable CSV of sites × keywords; concurrent, resumable. |
-| `/svt:report [run-id]` | Turn a finished run into the deliverables: `scorecard.xlsx` + `report.pdf`. `--format=xlsx\|pdf\|both`. |
+| `/svt:report [run-id]` | Turn a finished run into the client deliverable. **Default:** the **AI Visibility Tracker** matrix (`ai-visibility-matrix.xlsx`). Opt-in: `--format=xlsx\|pdf\|both` adds the detailed `scorecard.xlsx` / `report.pdf`; `--no-matrix` suppresses the matrix. |
 | `--dry-run` (flag) | On `collect`/`run`: validate input + sessions, probe one keyword per live lane, print the scope estimate. No full collection. Always run it first. |
 
 ---
@@ -118,7 +118,8 @@ Where **How it works** above describes *behavior*, this section describes *struc
                           ▼
                 ┌──────────────────────────────────────────────┐
                 │  /svt:report → Anthropic document-skills       │
-                │  scorecard.xlsx (openpyxl) · report.pdf (PDF)  │
+                │  ai-visibility-matrix.xlsx (default, openpyxl) │
+                │  +opt-in: scorecard.xlsx · report.pdf          │
                 └──────────────────────────────────────────────┘
 ```
 
@@ -127,7 +128,7 @@ Four roles, each a different kind of file — and the agent is the only thing th
 - **Orchestrator** (`/svt:*` command files) — owns input parsing, the run folder, dispatch, concurrency, and resilience. Holds *no* page logic.
 - **Collector subagents** (`svt-google`, `svt-ai-engine`) — run in isolated context so a 4,000-check batch never pollutes the orchestrator's window. One does positional Google scanning; one body, parameterized by a recipe row, drives all five AI chats.
 - **Browser** — Microsoft's `@playwright/cli` skill, installed (not bundled) by `/svt:setup`. Stateful named sessions over one persistent real-Chrome profile per platform, so logins survive across runs.
-- **Reporting** — Anthropic's first-party `document-skills` render the two deliverables. No second LLM, no gstack.
+- **Reporting** — Anthropic's first-party `document-skills` render the deliverables: the default **AI Visibility Tracker** matrix, plus an opt-in detailed scorecard + PDF. No second LLM, no gstack.
 
 ### The seam is a contract, not an API
 
@@ -156,12 +157,15 @@ This started as a conventional Node implementation (collectors, parsers, a schem
 
 ## Reporting
 
-`/svt:report` aggregates a run in-context and renders two views of one model, gstack-free, via Anthropic's first-party **document-skills**:
+`/svt:report` aggregates a run in-context and renders it gstack-free via Anthropic's first-party **document-skills**. **By default it produces the AI Visibility Tracker matrix**; the detailed scorecard and the PDF are opt-in — every deliverable is a view over the same in-context aggregation (no re-aggregation, no second LLM).
 
-- **`scorecard.xlsx`** — per-site visibility scorecard (% mentioned/cited across the AI engines, average Google position, AI-Overview presence) via `document-skills:xlsx` (openpyxl).
-- **`report.pdf`** — client-ready report (cover, exec summary, per-site visibility pages with embedded evidence, a coverage/quarantine appendix) via `document-skills:pdf` (reportlab).
+- **`ai-visibility-matrix.xlsx`** *(default)* — the at-a-glance client grid: one row per keyword, grouped per site, with the Google rank and a **`Yes` / `No`** presence cell per AI engine (ChatGPT · Gemini · Perplexity · Claude · Grok). Styled to the client template — lavender title bar, frozen header, merged Date/Site, **green `Yes` / red `No`** as plain colored text. Rendered via `document-skills:xlsx` (openpyxl).
+- **`scorecard.xlsx`** *(opt-in — `--format=xlsx`)* — the detailed per-site scorecard (% mentioned/cited across the AI engines, average Google position, AI-Overview presence, a quarantine ledger).
+- **`report.pdf`** *(opt-in — `--format=pdf`)* — the client-ready PDF (cover, exec summary, per-site visibility pages with embedded evidence, a coverage/quarantine appendix) via `document-skills:pdf` (reportlab).
 
-`--format` selects which to render. The honesty rules carry into both: a coverage gap is surfaced as a gap, never a fake `0%`; Google with zero ran checks shows `—`, not a fabricated negative.
+**Flags:** `--format=xlsx|pdf|both` adds the scorecard / PDF (default: none — matrix only) · `--no-matrix` suppresses the matrix · `--dry-run` prints the scope without rendering.
+
+The honesty rules carry into every deliverable: a coverage gap is surfaced as a gap (`—`), never a `No` or a fake `0%`; only "we looked and the brand isn't there" is a real negative. Google with zero ran checks shows `—`, not a fabricated number.
 
 ---
 
@@ -174,7 +178,8 @@ Everything a run produces lives under `runs/<run-id>/` (gitignored):
 | `results.ndjson` | Append-only log of every check (both shapes) — crash-safe, resumable |
 | `evidence/*.png` | One screenshot per `ok`/`quarantined` check — the audit trail |
 | `quarantine.json` | View over the records needing review (`quarantined` / `needs-human`) |
-| `report/scorecard.xlsx`, `report/report.pdf` | The client deliverables (`/svt:report`) |
+| `report/ai-visibility-matrix.xlsx` | **Default** deliverable — the AI Visibility Tracker grid (`/svt:report`) |
+| `report/scorecard.xlsx`, `report/report.pdf` | Opt-in deliverables — detailed scorecard + PDF (`/svt:report --format=…`) |
 
 Resume a batch with `/svt:run --resume=<run_id>` — it skips completed checks and re-attempts the ones a challenge blocked.
 
