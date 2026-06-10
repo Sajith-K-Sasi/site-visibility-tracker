@@ -146,5 +146,79 @@ when reportlab is unavailable — the §5 xlsx-fallback analogue: **graceful deg
 report.** (The PDF artifact path is the `runs/<id>/report/report.pdf` already listed in §4.)
 
 ---
+
+## 7. AI Visibility Tracker matrix (standalone XLSX)
+
+A flat, **client-facing matrix** — the at-a-glance grid a marketer hands a client: site × keyword ×
+engine, one Yes/No per AI engine plus the Google rank. It is a **SECOND VIEW over the unchanged §1–§3
+model** (the same materialized `results.json`, the same last-line-per-`(site_url, keyword, platform)`
+resolution, the same status accounting) — it adds **no new metric and no new status**. It is the **default
+deliverable** of `/svt:report`; the §5 `scorecard.xlsx` + §6 `report.pdf` are **opt-in** via `--format`
+(suppress the matrix with `--no-matrix`).
+
+- **Artifact:** `runs/<id>/report/ai-visibility-matrix.xlsx` (one sheet, titled **"AI Visibility
+  Tracker"**). Degrades to `runs/<id>/report/ai-visibility-matrix.csv` + a one-line WARN if openpyxl is
+  unobtainable — the §5 CSV-fallback analogue: **graceful degradation, never a failed report**.
+
+### 7a. Columns (exact order) + field mapping
+
+| # | Column | Source (existing field) |
+|---|--------|-------------------------|
+| 1 | **Date** | the run date — parsed from `run_id` (`svt-YYYYMMDD-…`), formatted `YYYY-MM-DD` |
+| 2 | **Site** | the site label — `input.snapshot.json` `brand` (fallback `site_url`) |
+| 3 | **KWs** | `keyword` (verbatim) |
+| 4 | **Google SERP Position** | `organic_positional.result.position` (integer 1–50; see 7c for absent/gap) |
+| 5 | **Chatgpt** | `ai_presence.result.mentioned` for platform `chatgpt` |
+| 6 | **Gemini** | `ai_presence.result.mentioned` for platform `gemini` |
+| 7 | **Perplexity** | `ai_presence.result.mentioned` for platform `perplexity` |
+| 8 | **Claudeai** | `ai_presence.result.mentioned` for platform **`claude`** |
+| 9 | **Grok** | `ai_presence.result.mentioned` for platform `grok` |
+
+> The column label **"Claudeai" = the `claude` platform**; **"Grok" = the `grok` platform** (the display
+> names differ from the recipe ids). The engine column order is fixed exactly as above.
+
+### 7b. Layout
+
+- **One row per keyword**, grouped per **site** (registrable domain / label).
+- **Date + Site** are shown **once per site block** — rendered on the block's first keyword row and
+  vertically merged across the block's rows (so a multi-keyword site reads as one labelled group).
+- A header row carries the nine column titles (bold + filled); the header row is frozen.
+
+### 7c. Honesty cell-mapping (the §3 inequality applied to a Yes/No grid)
+
+The §3 guarantee holds **in every cell** — a coverage gap is **never** a competitive negative:
+
+| Cell | Renders |
+|------|---------|
+| engine — `ok` + `mentioned:true` | **`Yes`** |
+| engine — `ok` + `mentioned:false` | **`No`** (a real, reportable "absent") |
+| engine — `skipped-no-session` / `needs-human` / `error` / `quarantined` / `not-collected` | **`—`** (coverage gap — *couldn't look*, **never** `No`) |
+| Google — `ok` + `found:true` | the **integer position** (1–50) |
+| Google — `ok` + `found:false` | **`—`** (scanned, not in top 50) |
+| Google — coverage gap (any non-`ok` / `not-collected`) | **`—`** |
+
+> The same inequality as §3 / §6c: **`ok + mentioned:false / found:false`** (looked, absent) ≠ a
+> **coverage gap** (couldn't look). Only the former is a `No` / a missing rank; the latter is always
+> `—`. No cell is ever a fabricated `No` or `0`. (result-shapes §3 = organic / §4 = ai_presence.)
+
+### 7d. Visual style (the client template)
+
+The matrix is the client-facing grid, styled to match the shared template:
+
+| Element | Style |
+|---------|-------|
+| **Title row** | `AI Visibility Tracker` **merged across all nine columns**, lavender fill, bold, centered |
+| **Header row** | the nine titles on a rose/pink fill, bold, centered; thin cell borders throughout; **frozen** so it stays visible on scroll |
+| **Date + Site** | merged once per site block, vertically centered |
+| **KWs** | left-aligned, **wrapped text** (long keywords wrap, as in the template) |
+| **Engine cells** (`Yes`/`No`/`—`) | **plain text** with a **direct cell fill** per value (no dropdown — the value is always visible) — **`Yes` → green** fill + white bold · **`No` → red** fill + white bold · **`—` → neutral grey** + grey text |
+| **Google SERP Position** | the integer rank or `—`, centered, uncolored |
+
+The value is written as **plain text** with the fill baked into the cell, so the green/red `Yes`/`No` cells
+render identically in **Excel**, **Google Sheets**, and Numbers — no dropdown, nothing hidden. When the matrix
+degrades to CSV (openpyxl absent), the cells carry the same `Yes`/`No`/`—` **text** without the fills — still
+complete and honest.
+
+---
 *report-contract.md — the deliverable's data + layout. Intake → input-contract; per-check record →
 result-shapes; run folder + resume → run-layout; per-platform collection → recipe-table.*

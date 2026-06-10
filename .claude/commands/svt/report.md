@@ -1,24 +1,27 @@
 ---
-description: "Turn a finished run's per-check records into the client deliverables. Reads runs/<id>/results.ndjson (+ input.snapshot.json for the expected set), materializes results.json, aggregates a per-site scorecard that surfaces every coverage gap (never silently drops a check), and renders runs/<id>/report/scorecard.xlsx via document-skills:xlsx and runs/<id>/report/report.pdf via document-skills:pdf (reportlab). --format=xlsx|pdf|both (default both); --dry-run validates + prints the scope without rendering. gstack-free, no second LLM."
-argument-hint: "[run-id]  [--format=xlsx|pdf|both]  [--dry-run]  [--out=<dir>]"
+description: "Turn a finished run's per-check records into the client deliverables. Reads runs/<id>/results.ndjson (+ input.snapshot.json for the expected set), materializes results.json, aggregates a per-site model in-context, and BY DEFAULT renders the AI Visibility Tracker matrix (runs/<id>/report/ai-visibility-matrix.xlsx) — the client-facing site × keyword × engine grid. --format=xlsx|pdf|both opts into the legacy scorecard.xlsx (document-skills:xlsx) and/or report.pdf (document-skills:pdf/reportlab); --no-matrix suppresses the matrix; --dry-run validates + prints the scope without rendering. gstack-free, no second LLM."
+argument-hint: "[run-id]  [--format=xlsx|pdf|both]  [--no-matrix]  [--dry-run]  [--out=<dir>]"
 allowed-tools: Bash, Read, Write
 ---
 
 # /svt:report — the client deliverable from a run (gstack-free)
 
 You are the **report orchestrator**. You read a finished run's per-check records, **aggregate the per-site
-scorecard in-context** (you are the brain — no second LLM), and hand the rendering to the adopted
-**`document-skills`** skills (agent-driven code): **`:xlsx`** (openpyxl/pandas → the working `scorecard.xlsx`)
-and **`:pdf`** (reportlab Platypus → the client-facing `report.pdf`). You own the aggregation, the
-**status accounting** (so no check is silently dropped), and the materialized `results.json`; the skills
-draw the deliverables. `--format` selects which to produce (default both).
+model in-context** (you are the brain — no second LLM), and render the deliverables via the adopted
+**`document-skills:xlsx`** (openpyxl) / **`:pdf`** (reportlab) skills. **By default you render the
+client-facing *AI Visibility Tracker* matrix** (`ai-visibility-matrix.xlsx`, §7) — the site × keyword ×
+engine grid. The **legacy** working artifacts — the 4-sheet `scorecard.xlsx` (§5) and the `report.pdf`
+(§6) — are **opt-in** via `--format`. You own the aggregation, the **status accounting** (so no check is
+silently dropped), and the materialized `results.json`; the skills draw the deliverables.
 
 `/svt:report` is the reporting analogue of the collection commands: same run folder, same contracts — it
 **reads** what `/svt:run` / `/svt:collect` produced and turns it into a deliverable.
 
-> **Deliverables:** the **XLSX scorecard** (`scorecard.xlsx`, the working artifact) and the **PDF client
-> report** (`report.pdf`, the client-facing document). Both render from the **same** in-context scorecard
-> model + status accounting — one aggregation, two views. `--format` selects which. A PPTX deck is deferred.
+> **Deliverables:** the **default** is the **AI Visibility Tracker matrix** (`ai-visibility-matrix.xlsx`, §7) —
+> the client-facing site × keyword × engine grid (styled green `Yes` / red `No`, §7d). **Opt-in** via
+> `--format`: the **XLSX scorecard** (`scorecard.xlsx`, the working artifact, §5) and the **PDF client report**
+> (`report.pdf`, §6). All render from the **same** in-context aggregation — one aggregation, many views. A
+> PPTX deck is deferred.
 
 > **Contracts (read, don't duplicate):** `report-contract.md` (**the report's data model + the §5 4-sheet
 > workbook layout + the §6 PDF layout + the status accounting** — this command implements it), `run-layout.md`
@@ -33,22 +36,30 @@ draw the deliverables. `--format` selects which to produce (default both).
 **Args:**
 - `/svt:report <run-id>` — report the named run (`runs/<run-id>/`).
 - `/svt:report` — no run-id → **auto-select the most recent** `runs/*` that has a `results.ndjson` (echo which one).
-- `/svt:report --format=xlsx|pdf|both [run-id]` — choose deliverables: `xlsx` (scorecard only) · `pdf` (client
-  report only) · `both` (**default**). Drives which of §5 / §6 runs (and which toolchain §0a preflights).
+- `/svt:report [run-id]` — **default deliverable: the AI Visibility Tracker matrix**
+  (`runs/<id>/report/ai-visibility-matrix.xlsx`; report-contract §7, rendered by §7 below). Produced unless
+  `--no-matrix`.
+- `/svt:report --format=xlsx|pdf|both [run-id]` — **also** emit the (opt-in) legacy deliverables: `xlsx` (the
+  4-sheet `scorecard.xlsx`, §5) · `pdf` (the `report.pdf`, §6) · `both`. **Default = none** — omit `--format`
+  and only the matrix is produced. Selects which of §5 / §6 runs (and which toolchain §0a preflights).
+- `/svt:report --no-matrix [run-id]` — suppress the default matrix (e.g. when you only want `--format` outputs).
 - `/svt:report --dry-run [run-id]` — validate + aggregate + print the scope/coverage summary; **render nothing**
-  (honors `--format`: prints what each selected deliverable *would* contain).
+  (echoes the matrix scope + what each selected `--format` deliverable *would* contain).
 - `/svt:report --out=<dir> [run-id]` — override the report output dir (default `runs/<id>/report/`).
 
 ### 0a. Preflight — report toolchain (degrade, don't block)
 
 Unlike the collection commands' §0a (which hard-stops), the report **degrades gracefully** — a missing
-render dependency must never lose the data layer. Preflight **only the toolchain `--format` selects**:
+render dependency must never lose the data layer. Preflight the **matrix toolchain (always — it is the
+default)** plus **only the legacy toolchain `--format` selects**:
 
 - **`python3`** present (required for any render).
 
-**XLSX toolchain** (when `--format` ∈ {xlsx, both}):
+**XLSX toolchain** (**always** — the default matrix needs `openpyxl`; also drives the `--format` scorecard):
 - **`openpyxl`** importable — if missing, best-effort `python3 -m pip install --user --quiet openpyxl`
   (fall back to a throwaway venv if the environment is externally-managed). `pandas` is optional (convenience).
+  *(The `--matrix` workbook needs only `openpyxl` — it is static Yes/No/rank values, no live formulas, so
+  LibreOffice is irrelevant to it; the §7 render is always "full" once openpyxl is present.)*
 - **LibreOffice (`soffice`)** present → **xlsx full mode** (live Excel formulas + `scripts/recalc.py` verifies
   zero formula errors). Absent → **xlsx fallback mode** (computed-value static workbook + a one-line WARN).
   Either way a valid `scorecard.xlsx` is produced. If even `openpyxl` can't be obtained, still do §1–§3 +
@@ -103,10 +114,12 @@ the status counts + the headline AI/Google metrics, and a one-line callout of th
 
 ### 4. `--dry-run`
 
-Do §0a–§3 + the console summary, then **STOP**: for each **selected** `--format`, report what it *would*
-contain and its **render mode** — `scorecard.xlsx` (the sheets + per-site rows; full/fallback) and/or
-`report.pdf` (the §6 sections + per-site pages + the evidence-thumbnail count; full/fallback). Render nothing;
-write `results.json` (harmless, it's a read convenience) but no workbook or PDF.
+Do §0a–§3 + the console summary, then **STOP**: **by default echo the matrix scope** —
+`ai-visibility-matrix.xlsx`: site count, total keyword rows, the 9-column header, and render mode (xlsx/csv)
+— unless `--no-matrix`. For each **selected** `--format`, also report what it *would* contain and its render
+mode — `scorecard.xlsx` (the sheets + per-site rows; full/fallback) and/or `report.pdf` (the §6 sections +
+per-site pages + the evidence-thumbnail count; full/fallback). Render nothing; write `results.json` (harmless,
+it's a read convenience) but no workbook, PDF, or matrix.
 
 ### 5. Render — `scorecard.xlsx` via `document-skills:xlsx`  *(when `--format` ∈ {xlsx, both})*
 
@@ -169,11 +182,61 @@ Create `runs/<id>/report/`, save, and print the final path + render mode + an "o
 overwrites it (the run's records are the source of truth). **Never** let a downgrade fail the report — a
 complete, honest client document is the floor.
 
+### 7. Render — `ai-visibility-matrix.xlsx` via `document-skills:xlsx`  *(default — unless `--no-matrix`)*
+
+Render the **AI Visibility Tracker** matrix per **report-contract §7** — the **default deliverable**, the
+**primary VIEW over the same in-context aggregation built in §3** (do **not** re-read or re-aggregate). Build
+one sheet titled **"AI Visibility Tracker"** with the exact header row, in this order:
+
+`Date | Site | KWs | Google SERP Position | Chatgpt | Gemini | Perplexity | Claudeai | Grok`
+
+- **Rows:** one per **expected** keyword (from `input.snapshot.json`, so a never-run keyword is shown, never
+  hidden), grouped per site; **Date + Site** written once per site block and **vertically merged** across the
+  block's rows (openpyxl `merge_cells`).
+- **Cells (report-contract §7c honesty mapping — keep the §3 buckets distinct):**
+  - engine column (Chatgpt=`chatgpt` · Gemini=`gemini` · Perplexity=`perplexity` · **Claudeai=`claude`** ·
+    Grok=`grok`) = **`Yes`** (`ok`+`mentioned:true`) / **`No`** (`ok`+`mentioned:false`) / **`—`** (any
+    coverage gap: `skipped-no-session`·`needs-human`·`error`·`quarantined`·`not-collected`).
+  - **Google SERP Position** = the **integer rank** (`ok`+`found:true`) / **`—`** (`ok`+`found:false` OR any
+    coverage gap).
+  - A coverage gap is **never** `No`/`0`; only `ok+mentioned:false` / `found:false` is a real "absent".
+- **Date** = the run date parsed from `run_id` (`svt-YYYYMMDD-…` → `YYYY-MM-DD`); **Site** = the
+  `input.snapshot.json` `brand` (fallback `site_url`).
+
+**Visual style (report-contract §7d — the client template):**
+- **Title row** — `AI Visibility Tracker` **merged across all nine columns** (row 1), lavender fill (~`E4DFEC`),
+  bold, centered.
+- **Header row** (row 2) — the nine titles on a rose/pink fill (~`EAD1DC`), bold, centered; **freeze panes
+  below it** (`A3`) so title + header stay pinned on scroll.
+- **Date + Site** — merged once per site block, vertically centered; **KWs** left-aligned with **wrapped text**;
+  thin borders on every cell.
+- **Engine cells** — **plain text** `Yes`/`No`/`—`, centered, with a **direct cell fill** per value (no
+  dropdown / no data-validation — so the value is always visible): **`Yes` → green** fill (~`1E8E3E`) + white
+  bold · **`No` → red** fill (~`D93025`) + white bold · **`—` → neutral grey** (~`EFEFEF`) + grey text. The
+  fill is baked into the cell (not conditional formatting), so it shows identically in Excel, Google Sheets,
+  and Numbers.
+- **Google SERP Position** — integer rank or `—`, centered, uncolored.
+
+Save to `runs/<id>/report/ai-visibility-matrix.xlsx`; print the path + an "open it" pointer. Re-running
+overwrites it.
+
+**Render mode (degrade-don't-block):** the matrix is **static computed values** (Yes/No/rank — no live
+formulas, so LibreOffice is irrelevant). If **openpyxl** is unobtainable, emit
+`runs/<id>/report/ai-visibility-matrix.csv` (same columns + cells, plain text — no fills) and print
+`WARN: openpyxl absent → ai-visibility-matrix.csv (xlsx skipped)`. **Never** let this fail the report — a
+complete, honest matrix (xlsx or csv) is the floor.
+
 ## Rules recap
 
 - **Reads** a finished run (`runs/<id>/results.ndjson` + `input.snapshot.json`); **writes** `results.json` +
-  (per `--format`) `runs/<id>/report/scorecard.xlsx` and/or `runs/<id>/report/report.pdf`. Collection-side
-  files are untouched — the report is read-only over results.
+  **by default** `runs/<id>/report/ai-visibility-matrix.xlsx` (the matrix) + (per `--format`)
+  `runs/<id>/report/scorecard.xlsx` and/or `runs/<id>/report/report.pdf`. Collection-side files are untouched —
+  the report is read-only over results.
+- **The matrix is the DEFAULT view** over the §3 aggregation (no re-aggregation) — the flat **AI Visibility
+  Tracker** grid (report-contract §7), styled green `Yes` / red `No` as plain colored text (§7d). Same
+  honesty mapping: a coverage gap renders `—`, **never** a false `No`/`0`; only `ok+mentioned:false` /
+  `found:false` is a real absent. The scorecard (§5) + PDF (§6) are **opt-in** via `--format` (`--no-matrix`
+  suppresses the matrix).
 - **One aggregation, two views:** you aggregate the scorecard **once** in-context (no second LLM); the
   **`document-skills:xlsx` / `:pdf` skills render** (agent-driven code: openpyxl / reportlab). gstack-free.
 - **Never silently drop a check:** every status + `not-collected` is surfaced; a coverage gap is never a
